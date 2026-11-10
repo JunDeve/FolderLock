@@ -18,9 +18,10 @@ A **folder vault you carry on a USB drive**. Lock a folder with a password and o
 > Always keep a separate backup of important files.
 
 ## Usage
-1. Run `FolderLock.exe` → **Lock a folder (new vault)** → pick a folder → set a password
+1. Run `FolderLock.exe` → **Lock folder** → pick a folder → set a password
    - Existing files in the folder are encrypted, then the originals are deleted (only after each encrypted copy has been verified)
-2. Afterwards: run → pick the vault → enter the password → built-in explorer
+2. Afterwards: run → pick the locked folder → **Open folder** → enter the password → built-in explorer
+   - Locked folders on the USB drive appear in the list automatically. **Refresh** searches the whole USB drive (and other plugged-in USB drives) again; a locked folder anywhere else can be dragged onto the start window
    - Drag and drop files onto the window to encrypt them into the vault
    - Double-click: photos and text open in memory; other files are decrypted to a PC temp folder and opened with the associated app. When you save there, the changes are re-encrypted into the vault automatically
    - **Export** decrypts selected items to a location of your choice

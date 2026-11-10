@@ -55,35 +55,49 @@ namespace FolderLock
             _list.Columns.Add(L.T("금고", "Vault"), 300);
             _list.Columns.Add(L.T("위치", "Location"), 180);
             _list.DoubleClick += (s, e) => OpenSelected();
+            // 숨은 기능: 금고 폴더를 끌어다 놓으면 열기 (일반 폴더면 잠글지 묻기)
+            _list.AllowDrop = true;
+            _list.DragEnter += (s, e) => e.Effect = e.Data.GetDataPresent(DataFormats.FileDrop) ? DragDropEffects.Link : DragDropEffects.None;
+            _list.DragDrop += (s, e) =>
+            {
+                if (e.Data.GetData(DataFormats.FileDrop) is string[] paths && paths.Length > 0 && Directory.Exists(paths[0]))
+                    BeginInvoke(new Action(() => OpenDropped(paths[0])));
+            };
             _list.SelectedIndexChanged += (s, e) => _openBtn.Enabled = _list.SelectedItems.Count == 1 && _list.SelectedItems[0].Tag is string;
             _list.Resize += (s, e) => { if (_list.Columns.Count == 2) _list.Columns[0].Width = Math.Max(120, _list.ClientSize.Width - _list.Columns[1].Width - 4); };
             root.Controls.Add(_list);
 
             var buttons = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, FlowDirection = FlowDirection.RightToLeft, Margin = new Padding(0, 14, 0, 0) };
-            _openBtn = Theme.PrimaryButton(L.T("열기", "Open"));
+            _openBtn = Theme.PrimaryButton(L.T("폴더 열기", "Open folder"));
             _openBtn.Enabled = false;
             _openBtn.Click += (s, e) => OpenSelected();
-            var otherBtn = Theme.SecondaryButton(L.T("다른 위치의 금고 열기...", "Open vault elsewhere..."));
-            otherBtn.Click += (s, e) => OpenOther();
-            var createBtn = Theme.SecondaryButton(L.T("폴더 잠그기 (금고 만들기)...", "Lock a folder (new vault)..."));
+            var createBtn = Theme.SecondaryButton(L.T("폴더 잠그기", "Lock folder"));
             createBtn.Click += (s, e) => CreateVault();
+            var refreshBtn = Theme.SecondaryButton(L.T("새로고침", "Refresh"));
+            refreshBtn.Click += (s, e) => DeepSearch();
             var tips = new ToolTip();
-            tips.SetToolTip(_openBtn, L.T("목록에서 선택한 금고를 엽니다", "Open the vault selected in the list"));
-            tips.SetToolTip(otherBtn, L.T("목록에 없는 금고 폴더(다른 드라이브 등)를 직접 골라 엽니다", "Pick a vault folder that is not in the list (e.g. on another drive)"));
-            tips.SetToolTip(createBtn, L.T("일반 폴더를 골라 새 금고로 만듭니다 (안의 파일은 암호화)", "Turn a normal folder into a new vault (its files get encrypted)"));
+            tips.SetToolTip(_openBtn, L.T("목록에서 선택한 잠긴 폴더를 엽니다", "Open the locked folder selected in the list"));
+            tips.SetToolTip(createBtn, L.T("일반 폴더를 골라 비밀번호로 잠급니다", "Pick a normal folder and lock it with a password"));
+            tips.SetToolTip(refreshBtn, L.T("USB 전체와 꽂혀 있는 다른 USB에서 잠긴 폴더를 다시 찾습니다\n(다른 곳의 잠긴 폴더는 이 창에 끌어다 놓으면 열립니다)",
+                                            "Search this USB drive and other plugged-in USB drives for locked folders\n(locked folders elsewhere can be dragged onto this window)"));
             buttons.Controls.Add(_openBtn);
-            buttons.Controls.Add(otherBtn);
             buttons.Controls.Add(createBtn);
+            buttons.Controls.Add(refreshBtn);
             root.Controls.Add(buttons);
 
             AcceptButton = _openBtn;
             Load += (s, e) => Reload();
         }
 
-        private void Reload()
+        /// <summary>새로고침·끌어놓기로 찾은 금고 (이번 실행 동안 목록에 유지).</summary>
+        private readonly SortedSet<string> _extra = new SortedSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        private void Reload(string select = null)
         {
             _list.Items.Clear();
-            foreach (var dir in FindVaults())
+            var all = new SortedSet<string>(FindVaults(), StringComparer.OrdinalIgnoreCase);
+            foreach (var x in _extra) if (Vault.IsVault(x)) all.Add(x);
+            foreach (var dir in all)
             {
                 var it = new ListViewItem(Path.GetFileName(dir)) { Tag = dir };
                 it.SubItems.Add(ShortLocation(dir));
@@ -91,13 +105,85 @@ namespace FolderLock
             }
             if (_list.Items.Count == 0)
             {
-                var it = new ListViewItem(L.T("(아직 금고가 없습니다 — '폴더 잠그기'로 만드세요)", "(No vaults yet — create one with 'Lock a folder')")) { ForeColor = Theme.Muted };
+                var it = new ListViewItem(L.T("아직 잠근 폴더가 없습니다. '폴더 잠그기'로 시작하세요.", "No locked folders yet. Start with 'Lock folder'.")) { ForeColor = Theme.Muted };
                 _list.Items.Add(it);
             }
             else
             {
-                _list.Items[0].Selected = true;
+                var target = _list.Items.Cast<ListViewItem>().FirstOrDefault(i => select != null && string.Equals(i.Tag as string, select, StringComparison.OrdinalIgnoreCase))
+                             ?? _list.Items[0];
+                target.Selected = true;
+                target.EnsureVisible();
                 _list.Focus();
+            }
+        }
+
+        /// <summary>
+        /// 새로고침: exe 가 있는 드라이브 전체 + 꽂혀 있는 이동식 드라이브 전체를 깊게 탐색.
+        /// (PC 내장 드라이브 전체는 너무 오래 걸려 제외 — 그런 금고는 끌어다 놓기로 연다)
+        /// </summary>
+        private void DeepSearch()
+        {
+            var before = new HashSet<string>(_list.Items.Cast<ListViewItem>().Select(i => i.Tag as string).Where(t => t != null), StringComparer.OrdinalIgnoreCase);
+            var found = new List<string>();
+            bool done;
+            try { done = ProgressForm.Run(this, L.T("잠긴 폴더 찾는 중", "Searching for locked folders"), p => found.AddRange(FindVaultsDeep(p)), cancellable: true); }
+            catch (Exception ex) { Msg.Error(this, ex.Message); return; }
+            foreach (var f in found) _extra.Add(f);
+            Reload();
+            int added = found.Count(f => !before.Contains(f));
+            if (done && added == 0)
+                Msg.Info(this, L.T("새로 찾은 잠긴 폴더가 없습니다.", "No new locked folders were found."));
+        }
+
+        private IEnumerable<string> FindVaultsDeep(OpProgress p)
+        {
+            var roots = new SortedSet<string>(StringComparer.OrdinalIgnoreCase);
+            // exe 가 USB(이동식)에 있으면 그 드라이브 전체, PC 내장 드라이브면 exe 폴더 아래만 (C: 전체 탐색 방지)
+            var exeRoot = Path.GetPathRoot(_baseDir);
+            bool exeOnRemovable = false;
+            try { exeOnRemovable = !string.IsNullOrEmpty(exeRoot) && new DriveInfo(exeRoot).DriveType == DriveType.Removable; } catch { }
+            roots.Add(exeOnRemovable ? exeRoot : _baseDir);
+            foreach (var d in DriveInfo.GetDrives())
+            {
+                try { if (d.IsReady && d.DriveType == DriveType.Removable) roots.Add(d.RootDirectory.FullName); } catch { }
+            }
+
+            var result = new List<string>();
+            var stack = new Stack<string>(roots);
+            while (stack.Count > 0)
+            {
+                var dir = stack.Pop();
+                p.StartFile(dir);
+                if (Vault.IsVault(dir)) { result.Add(dir.TrimEnd('\\')); continue; } // 금고 안은 더 들어가지 않음
+                string[] subs;
+                try { subs = Directory.GetDirectories(dir); } catch { continue; }
+                foreach (var s in subs)
+                {
+                    try
+                    {
+                        var a = new DirectoryInfo(s).Attributes;
+                        if ((a & (FileAttributes.System | FileAttributes.Hidden | FileAttributes.ReparsePoint)) != 0) continue;
+                    }
+                    catch { continue; }
+                    stack.Push(s);
+                }
+            }
+            return result;
+        }
+
+        private void OpenDropped(string dir)
+        {
+            dir = Path.GetFullPath(dir).TrimEnd('\\');
+            if (Vault.IsVault(dir))
+            {
+                _extra.Add(dir);
+                Reload(dir);
+                OpenVault(dir);
+            }
+            else if (Msg.Confirm(this, L.T($"'{Path.GetFileName(dir)}' 폴더는 아직 잠기지 않았습니다. 잠글까요?", $"'{Path.GetFileName(dir)}' is not locked yet. Lock it?")))
+            {
+                CreateVaultAt(dir);
             }
         }
 
@@ -146,22 +232,6 @@ namespace FolderLock
         {
             if (_list.SelectedItems.Count != 1 || !(_list.SelectedItems[0].Tag is string dir)) return;
             OpenVault(dir);
-        }
-
-        private void OpenOther()
-        {
-            using (var dlg = new FolderBrowserDialog { Description = L.T("열 금고 폴더를 선택하세요.", "Select the vault folder to open."), SelectedPath = _baseDir, ShowNewFolderButton = false })
-            {
-                if (dlg.ShowDialog(this) != DialogResult.OK) return;
-                if (!Vault.IsVault(dlg.SelectedPath))
-                {
-                    if (Msg.Confirm(this, L.T("이 폴더는 아직 금고가 아닙니다.\n이 폴더를 잠그시겠습니까 (금고 만들기)?",
-                                              "This folder is not a vault yet.\nDo you want to lock it (create a vault)?")))
-                        CreateVaultAt(dlg.SelectedPath);
-                    return;
-                }
-                OpenVault(dlg.SelectedPath);
-            }
         }
 
         private void OpenVault(string dir)

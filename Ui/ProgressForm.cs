@@ -106,7 +106,12 @@ namespace FolderLock
 
         private void UpdateView()
         {
-            if (!_p.HasTotals) return;
+            if (!_p.HasTotals)
+            {
+                // 전체 양을 모르는 작업(예: 폴더 탐색)은 지금 보는 위치만 표시
+                if (!string.IsNullOrEmpty(_p.Current)) _file.Text = _p.Current;
+                return;
+            }
             long total = _p.TotalBytes, done = _p.Bytes;
             int files = _p.Files, totalFiles = _p.TotalFiles;
 
