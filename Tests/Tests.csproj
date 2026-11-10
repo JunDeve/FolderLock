@@ -10,5 +10,7 @@
     <Compile Include="Program.cs" />
     <Compile Include="..\Crypto.cs" />
     <Compile Include="..\Vault.cs" />
+    <Compile Include="..\Lang.cs" />
+    <Compile Include="..\Progress.cs" />
   </ItemGroup>
 </Project>

@@ -27,12 +27,12 @@ namespace FolderLock
 
     internal sealed class WrongPasswordException : Exception
     {
-        public WrongPasswordException() : base("비밀번호가 틀렸습니다.") { }
+        public WrongPasswordException() : base(L.T("비밀번호가 틀렸습니다.", "Wrong password.")) { }
     }
 
     internal sealed class TamperedDataException : Exception
     {
-        public TamperedDataException(string what) : base("데이터가 손상되었거나 변조되었습니다: " + what) { }
+        public TamperedDataException(string what) : base(L.T("데이터가 손상되었거나 변조되었습니다: ", "Data is corrupted or has been tampered with: ") + what) { }
     }
 
     /// <summary>
@@ -46,7 +46,7 @@ namespace FolderLock
         private static readonly byte[] Magic = Encoding.ASCII.GetBytes("FLB1");
         private const int HeaderLen = 4 + 16;
         private const int TagLen = 32;
-        private const int BufSize = 1 << 16;
+        private const int BufSize = 1 << 20; // 1MB: USB 처리량 향상
 
         private static readonly RandomNumberGenerator Rng = RandomNumberGenerator.Create();
 
@@ -181,10 +181,34 @@ namespace FolderLock
         /// <summary>먼저 MAC 을 전부 검증한 뒤에만 복호화한다 (검증 전 평문 출력 없음).</summary>
         public static void Decrypt(Stream input, Stream output, KeyPair k, string context)
         {
+            var iv = CheckMac(input, k, context, out long start, out long ctLen);
+
+            // 2차: 복호화
+            input.Position = start + HeaderLen;
+            using (var aes = NewAes(k, iv))
+            using (var dec = aes.CreateDecryptor())
+            {
+                var cs = new CryptoStream(new NonClosingStream(output), dec, CryptoStreamMode.Write);
+                var buf = new byte[BufSize];
+                long left = ctLen;
+                while (left > 0)
+                {
+                    int n = input.Read(buf, 0, (int)Math.Min(buf.Length, left));
+                    if (n <= 0) throw new TamperedDataException(context);
+                    cs.Write(buf, 0, n);
+                    left -= n;
+                }
+                cs.FlushFinalBlock();
+            }
+        }
+
+        /// <summary>1차 패스: 헤더 확인 + MAC 전체 검증. 통과하면 IV 를 돌려준다.</summary>
+        private static byte[] CheckMac(Stream input, KeyPair k, string context, out long start, out long ctLen)
+        {
             long total = input.Length - input.Position;
             if (total < HeaderLen + 16 + TagLen) throw new TamperedDataException(context);
-            long start = input.Position;
-            long ctLen = total - HeaderLen - TagLen;
+            start = input.Position;
+            ctLen = total - HeaderLen - TagLen;
 
             var head = ReadExact(input, HeaderLen);
             for (int i = 0; i < 4; i++) if (head[i] != Magic[i]) throw new TamperedDataException(context);
@@ -209,24 +233,7 @@ namespace FolderLock
                 var tag = ReadExact(input, TagLen);
                 if (!FixedTimeEquals(tag, hmac.Hash)) throw new TamperedDataException(context);
             }
-
-            // 2차: 복호화
-            input.Position = start + HeaderLen;
-            using (var aes = NewAes(k, iv))
-            using (var dec = aes.CreateDecryptor())
-            {
-                var cs = new CryptoStream(new NonClosingStream(output), dec, CryptoStreamMode.Write);
-                var buf = new byte[BufSize];
-                long left = ctLen;
-                while (left > 0)
-                {
-                    int n = input.Read(buf, 0, (int)Math.Min(buf.Length, left));
-                    if (n <= 0) throw new TamperedDataException(context);
-                    cs.Write(buf, 0, n);
-                    left -= n;
-                }
-                cs.FlushFinalBlock();
-            }
+            return iv;
         }
 
         public static byte[] DecryptBytes(byte[] blob, KeyPair k, string context)
@@ -244,10 +251,10 @@ namespace FolderLock
         {
             try
             {
+                // Encrypt-then-MAC: MAC 이 맞으면 암호문이 쓴 그대로라는 뜻 → 복호화 패스는 생략
                 using (var fs = new FileStream(blobPath, FileMode.Open, FileAccess.Read, FileShare.Read, BufSize))
-                using (var nul = new NullStream())
                 {
-                    Decrypt(fs, nul, k, context);
+                    CheckMac(fs, k, context, out _, out _);
                     return true;
                 }
             }

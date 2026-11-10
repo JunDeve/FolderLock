@@ -16,10 +16,12 @@ namespace FolderLock
         public static readonly Color Surface = Color.FromArgb(248, 250, 252);
         public static readonly Color Border = Color.FromArgb(226, 232, 240);
 
-        public static Font Base => new Font("Malgun Gothic", 9.75f);
-        public static Font Small => new Font("Malgun Gothic", 9f);
-        public static Font Title => new Font("Malgun Gothic", 16f, FontStyle.Bold);
-        public static Font Bold => new Font("Malgun Gothic", 9.75f, FontStyle.Bold);
+        // 한국어: 맑은 고딕, 그 외: Segoe UI (둘 다 Windows 기본 글꼴)
+        private static string Family => L.Ko ? "Malgun Gothic" : "Segoe UI";
+        public static Font Base => new Font(Family, 9.75f);
+        public static Font Small => new Font(Family, 9f);
+        public static Font Title => new Font(Family, 16f, FontStyle.Bold);
+        public static Font Bold => new Font(Family, 9.75f, FontStyle.Bold);
 
         public static Button PrimaryButton(string text)
         {
@@ -142,6 +144,16 @@ namespace FolderLock
             int i = -1;
             do { v /= 1024; i++; } while (v >= 1024 && i < u.Length - 1);
             return (v >= 100 ? v.ToString("0") : v.ToString("0.#")) + " " + u[i];
+        }
+
+        /// <summary>"약 6분 20초" / "about 6 min 20 s"</summary>
+        public static string Duration(TimeSpan t, bool approx = true)
+        {
+            string s;
+            if (t.TotalHours >= 1) s = L.T($"{(int)t.TotalHours}시간 {t.Minutes}분", $"{(int)t.TotalHours} h {t.Minutes} min");
+            else if (t.TotalMinutes >= 1) s = L.T($"{t.Minutes}분 {t.Seconds}초", $"{t.Minutes} min {t.Seconds} s");
+            else s = L.T($"{Math.Max(1, t.Seconds)}초", $"{Math.Max(1, t.Seconds)} s");
+            return approx ? L.T("약 ", "about ") + s : s;
         }
     }
 

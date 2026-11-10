@@ -16,6 +16,7 @@ namespace FolderLock
     internal sealed class MainForm : Form
     {
         private static readonly TimeSpan IdleLimit = TimeSpan.FromMinutes(10);
+        private const long ShowProgressAbove = 4L * 1024 * 1024; // 이보다 큰 파일을 열 때만 진행 창
 
         private sealed class Opened
         {
@@ -48,8 +49,8 @@ namespace FolderLock
             Font = Theme.Base;
             StartPosition = FormStartPosition.CenterScreen;
             AutoScaleMode = AutoScaleMode.Font;
-            ClientSize = new Size(900, 580);
-            MinimumSize = new Size(640, 420);
+            ClientSize = new Size(920, 580);
+            MinimumSize = new Size(660, 420);
             BackColor = Color.White;
             KeyPreview = true;
 
@@ -59,25 +60,29 @@ namespace FolderLock
 
             // ---------- 툴바 ----------
             var tools = new ToolStrip { GripStyle = ToolStripGripStyle.Hidden, Padding = new Padding(8, 4, 8, 4), RenderMode = ToolStripRenderMode.System, BackColor = Theme.Surface };
-            ToolStripButton Btn(string text, Action a, string tip = null)
+            ToolStripButton Btn(string text, Action a, string tip)
             {
-                var b = new ToolStripButton(text) { DisplayStyle = ToolStripItemDisplayStyle.Text, Padding = new Padding(4, 2, 4, 2), ToolTipText = tip ?? text };
+                var b = new ToolStripButton(text) { DisplayStyle = ToolStripItemDisplayStyle.Text, Padding = new Padding(4, 2, 4, 2), ToolTipText = tip };
                 b.Click += (s, e) => a();
                 tools.Items.Add(b);
                 return b;
             }
-            _upBtn = Btn("↑ 위로", GoUp, "상위 폴더 (Backspace)");
+            _upBtn = Btn(L.T("↑ 위로", "↑ Up"), GoUp, L.T("상위 폴더 (Backspace)", "Parent folder (Backspace)"));
             tools.Items.Add(new ToolStripSeparator());
-            Btn("+ 파일 넣기", AddFilesDialog, "파일을 암호화해서 넣기 (끌어다 놓아도 됩니다)");
-            Btn("+ 폴더 넣기", AddFolderDialog, "폴더째 암호화해서 넣기");
-            Btn("새 폴더", NewFolder);
+            Btn(L.T("+ 파일 넣기", "+ Add files"), AddFilesDialog, L.T("파일을 암호화해서 넣기 (끌어다 놓아도 됩니다)", "Encrypt files into the vault (drag and drop works too)"));
+            Btn(L.T("+ 폴더 넣기", "+ Add folder"), AddFolderDialog, L.T("폴더째 암호화해서 넣기", "Encrypt a whole folder into the vault"));
+            Btn(L.T("새 폴더", "New folder"), NewFolder, L.T("새 폴더", "New folder"));
             tools.Items.Add(new ToolStripSeparator());
-            Btn("꺼내기", ExportSelected, "선택한 항목을 복호화해서 다른 곳에 저장");
-            Btn("이름 바꾸기", RenameSelected, "이름 바꾸기 (F2)");
-            Btn("삭제", DeleteSelected, "금고에서 영구 삭제 (Delete)");
-            var lockBtn = new ToolStripButton("잠그기") { Alignment = ToolStripItemAlignment.Right, Font = Theme.Bold, ForeColor = Theme.Accent, Padding = new Padding(8, 2, 8, 2), ToolTipText = "임시파일을 지우고 금고를 잠급니다" };
+            Btn(L.T("꺼내기", "Export"), ExportSelected, L.T("선택한 항목을 복호화해서 다른 곳에 저장", "Decrypt the selected items and save them elsewhere"));
+            Btn(L.T("이름 바꾸기", "Rename"), RenameSelected, L.T("이름 바꾸기 (F2)", "Rename (F2)"));
+            Btn(L.T("삭제", "Delete"), DeleteSelected, L.T("금고에서 영구 삭제 (Delete)", "Permanently delete from the vault (Delete)"));
+            var lockBtn = new ToolStripButton(L.T("잠그기", "Lock"))
+            {
+                Alignment = ToolStripItemAlignment.Right, Font = Theme.Bold, ForeColor = Theme.Accent, Padding = new Padding(8, 2, 8, 2),
+                ToolTipText = L.T("임시파일을 지우고 금고를 잠급니다", "Delete temp files and lock the vault"),
+            };
             lockBtn.Click += (s, e) => LockNow(CloseKind.Locked);
-            var pwBtn = new ToolStripButton("비밀번호 변경") { Alignment = ToolStripItemAlignment.Right };
+            var pwBtn = new ToolStripButton(L.T("비밀번호 변경", "Change password")) { Alignment = ToolStripItemAlignment.Right };
             pwBtn.Click += (s, e) => ChangePassword();
             tools.Items.Add(lockBtn);
             tools.Items.Add(pwBtn);
@@ -93,16 +98,16 @@ namespace FolderLock
                 Dock = DockStyle.Fill, View = View.Details, FullRowSelect = true, MultiSelect = true, LabelEdit = true,
                 HideSelection = false, AllowDrop = true, BorderStyle = BorderStyle.None, SmallImageList = _icons.Images,
             };
-            _list.Columns.Add("이름", 420);
-            _list.Columns.Add("수정한 날짜", 150);
-            _list.Columns.Add("종류", 150);
-            _list.Columns.Add("크기", 90, HorizontalAlignment.Right);
+            _list.Columns.Add(L.T("이름", "Name"), 420);
+            _list.Columns.Add(L.T("수정한 날짜", "Date modified"), 150);
+            _list.Columns.Add(L.T("종류", "Type"), 150);
+            _list.Columns.Add(L.T("크기", "Size"), 90, HorizontalAlignment.Right);
             _list.ItemActivate += (s, e) => OpenSelected();
             _list.KeyDown += ListKeyDown;
             _list.BeforeLabelEdit += (s, e) => { if (_busy) e.CancelEdit = true; };
             _list.AfterLabelEdit += AfterLabelEdit;
             _list.DragEnter += (s, e) => e.Effect = e.Data.GetDataPresent(DataFormats.FileDrop) && !_busy ? DragDropEffects.Copy : DragDropEffects.None;
-            _list.DragDrop += (s, e) => { if (e.Data.GetData(DataFormats.FileDrop) is string[] paths) AddPaths(paths); };
+            _list.DragDrop += (s, e) => { if (e.Data.GetData(DataFormats.FileDrop) is string[] paths) BeginInvoke(new Action(() => AddPaths(paths))); };
             _list.MouseUp += (s, e) => { if (e.Button == MouseButtons.XButton1) GoUp(); };
             _list.ContextMenuStrip = BuildContextMenu();
 
@@ -110,7 +115,7 @@ namespace FolderLock
             var status = new StatusStrip { SizingGrip = true, BackColor = Theme.Surface };
             _status = new ToolStripStatusLabel { Spring = true, TextAlign = ContentAlignment.MiddleLeft };
             _tempStatus = new ToolStripStatusLabel { ForeColor = Color.FromArgb(180, 83, 9) };
-            var idle = new ToolStripStatusLabel($"{IdleLimit.TotalMinutes:0}분 동안 입력이 없으면 자동 잠금") { ForeColor = Theme.Muted };
+            var idle = new ToolStripStatusLabel(L.T($"{IdleLimit.TotalMinutes:0}분 동안 입력이 없으면 자동 잠금", $"Auto-locks after {IdleLimit.TotalMinutes:0} min of inactivity")) { ForeColor = Theme.Muted };
             status.Items.AddRange(new ToolStripItem[] { _status, _tempStatus, idle });
 
             Controls.Add(_list);
@@ -135,7 +140,7 @@ namespace FolderLock
             {
                 var it = new ListViewItem(e.Name, _icons.Key(e.Name, e.IsDir)) { Tag = e };
                 it.SubItems.Add(e.IsDir ? "" : e.ModifiedUtc.ToLocalTime().ToString("yyyy-MM-dd HH:mm"));
-                it.SubItems.Add(e.IsDir ? "파일 폴더" : _icons.TypeName(e.Name, false));
+                it.SubItems.Add(e.IsDir ? L.T("파일 폴더", "File folder") : _icons.TypeName(e.Name, false));
                 it.SubItems.Add(e.IsDir ? "" : Fmt.Size(e.Size));
                 _list.Items.Add(it);
                 if (selectPath != null && string.Equals(e.Path, selectPath, StringComparison.OrdinalIgnoreCase))
@@ -154,14 +159,16 @@ namespace FolderLock
 
             long size = items.Where(x => !x.IsDir).Sum(x => x.Size);
             _status.Text = items.Count == 0
-                ? "비어 있음 — 파일이나 폴더를 이 창으로 끌어다 놓으면 암호화되어 들어갑니다."
-                : $"항목 {items.Count}개 ({Fmt.Size(size)})   ·   전체 파일 {_v.FileCount}개";
+                ? L.T("비어 있음 — 파일이나 폴더를 이 창으로 끌어다 놓으면 암호화되어 들어갑니다.", "Empty — drag files or folders onto this window to encrypt them into the vault.")
+                : L.T($"항목 {items.Count:N0}개 ({Fmt.Size(size)})   ·   전체 파일 {_v.FileCount:N0}개",
+                      $"{items.Count:N0} item(s) ({Fmt.Size(size)})   ·   {_v.FileCount:N0} file(s) in vault");
             UpdateTempStatus();
         }
 
         private void UpdateTempStatus()
         {
-            _tempStatus.Text = _opened.Count == 0 ? "" : $"PC 임시폴더에 열린 파일 {_opened.Count}개 (잠그면 삭제)";
+            _tempStatus.Text = _opened.Count == 0 ? ""
+                : L.T($"PC 임시폴더에 열린 파일 {_opened.Count}개 (잠그면 삭제)", $"{_opened.Count} file(s) open in PC temp folder (deleted on lock)");
         }
 
         private List<Entry> Selected() => _list.SelectedItems.Cast<ListViewItem>().Select(i => (Entry)i.Tag).ToList();
@@ -182,14 +189,14 @@ namespace FolderLock
         private ContextMenuStrip BuildContextMenu()
         {
             var m = new ContextMenuStrip();
-            var open = m.Items.Add("열기", null, (s, e) => OpenSelected());
+            var open = m.Items.Add(L.T("열기", "Open"), null, (s, e) => OpenSelected());
             open.Font = Theme.Bold;
-            var export = m.Items.Add("꺼내기...", null, (s, e) => ExportSelected());
-            var rename = m.Items.Add("이름 바꾸기", null, (s, e) => RenameSelected());
-            var del = m.Items.Add("삭제", null, (s, e) => DeleteSelected());
+            var export = m.Items.Add(L.T("꺼내기...", "Export..."), null, (s, e) => ExportSelected());
+            var rename = m.Items.Add(L.T("이름 바꾸기", "Rename"), null, (s, e) => RenameSelected());
+            var del = m.Items.Add(L.T("삭제", "Delete"), null, (s, e) => DeleteSelected());
             m.Items.Add(new ToolStripSeparator());
-            m.Items.Add("새 폴더", null, (s, e) => NewFolder());
-            m.Items.Add("파일 넣기...", null, (s, e) => AddFilesDialog());
+            m.Items.Add(L.T("새 폴더", "New folder"), null, (s, e) => NewFolder());
+            m.Items.Add(L.T("파일 넣기...", "Add files..."), null, (s, e) => AddFilesDialog());
             m.Opening += (s, e) =>
             {
                 int n = _list.SelectedItems.Count;
@@ -221,12 +228,14 @@ namespace FolderLock
                 if (PreviewForm.CanPreview(e)) OpenInMemory(e);
                 else OpenExternal(e);
             }
-            catch (Exception ex) { Msg.Error(this, "파일을 열 수 없습니다.\n\n" + ex.Message); }
+            catch (Exception ex) { Msg.Error(this, L.T("파일을 열 수 없습니다.\n\n", "Cannot open the file.\n\n") + ex.Message); }
         }
 
         private void OpenInMemory(Entry e)
         {
-            var data = e.Size > 4 * 1024 * 1024 ? ProgressForm.Run(this, "복호화 중", _ => _v.ReadAll(e)) : _v.ReadAll(e);
+            var data = e.Size > ShowProgressAbove
+                ? ProgressForm.Run(this, L.T("복호화 중", "Decrypting"), p => { p.Begin(1, e.Size); return _v.ReadAll(e, p); })
+                : _v.ReadAll(e);
             var path = e.Path;
             PreviewForm pf = null;
             pf = new PreviewForm(e, data, bytes =>
@@ -237,7 +246,7 @@ namespace FolderLock
                     RefreshList(path);
                     return true;
                 }
-                catch (Exception ex) { Msg.Error(pf, "저장하지 못했습니다.\n\n" + ex.Message); return false; }
+                catch (Exception ex) { Msg.Error(pf, L.T("저장하지 못했습니다.\n\n", "Could not save.\n\n") + ex.Message); return false; }
             });
             Array.Clear(data, 0, data.Length);
             pf.Owner = this;
@@ -255,7 +264,14 @@ namespace FolderLock
             else
             {
                 temp = TempManager.NewFilePath(e.Name);
-                if (e.Size > 4 * 1024 * 1024) ProgressForm.Run(this, "복호화 중", _ => _v.ExtractTo(e, temp));
+                if (e.Size > ShowProgressAbove)
+                {
+                    if (!ProgressForm.Run(this, L.T("복호화 중", "Decrypting"), p => { p.Begin(1, e.Size); _v.ExtractTo(e, temp, p); }, cancellable: true))
+                    {
+                        TempManager.TryDelete(temp);
+                        return;
+                    }
+                }
                 else _v.ExtractTo(e, temp);
                 var fi = new FileInfo(temp);
                 _opened.Add(new Opened { VaultPath = e.Path, TempPath = temp, LastWrite = fi.LastWriteTimeUtc, Length = fi.Length });
@@ -270,7 +286,8 @@ namespace FolderLock
                 // 연결된 프로그램이 없음 → "연결 프로그램 선택" 창
                 Process.Start("rundll32.exe", "shell32.dll,OpenAs_RunDLL \"" + temp + "\"");
             }
-            _status.Text = $"'{e.Name}' 을(를) 열었습니다. 수정 후 저장하면 자동으로 금고에 암호화되어 반영됩니다.";
+            _status.Text = L.T($"'{e.Name}' 을(를) 열었습니다. 수정 후 저장하면 자동으로 금고에 암호화되어 반영됩니다.",
+                               $"Opened '{e.Name}'. When you save changes, they are encrypted back into the vault automatically.");
         }
 
         // ======================= 주기 점검: USB 제거 / 자동 잠금 / 임시파일 반영 =======================
@@ -317,7 +334,8 @@ namespace FolderLock
                     {
                         if (_closing) return;
                         RefreshList();
-                        _status.Text = $"{DateTime.Now:HH:mm:ss}  '{string.Join("', '", saved)}' 변경 내용을 금고에 암호화 저장했습니다.";
+                        var names = string.Join("', '", saved);
+                        _status.Text = $"{DateTime.Now:HH:mm:ss}  " + L.T($"'{names}' 변경 내용을 금고에 암호화 저장했습니다.", $"Saved changes to '{names}' into the vault (encrypted).");
                     }));
             });
         }
@@ -369,11 +387,15 @@ namespace FolderLock
                 if (stuck.Count == 0 || !interactive) break;
 
                 var names = string.Join("\n", stuck.Select(o => "  • " + Vault.NameOf(o.VaultPath)));
-                var r = MessageBox.Show(this,
+                var r = MessageBox.Show(this, L.T(
                     "아래 파일이 아직 다른 프로그램에서 열려 있어 임시본을 지울 수 없습니다:\n\n" + names +
                     "\n\n그 프로그램에서 저장하고 닫은 뒤 [다시 시도]를 누르세요.\n" +
                     "[취소]를 누르면 지금 잠급니다. 이후 그 프로그램에서 저장한 내용은 금고에 반영되지 않고,\n" +
                     "남은 임시본은 FolderLock 을 다음에 실행할 때 지워집니다.",
+                    "These files are still open in another program, so their temp copies cannot be deleted:\n\n" + names +
+                    "\n\nSave and close them in that program, then press [Retry].\n" +
+                    "[Cancel] locks now. Anything saved in that program afterwards will NOT reach the vault,\n" +
+                    "and the leftover temp copies are deleted the next time FolderLock runs."),
                     "FolderLock", MessageBoxButtons.RetryCancel, MessageBoxIcon.Warning);
                 if (r != DialogResult.Retry) break;
                 SyncTemps(ChangedTemps());
@@ -428,13 +450,13 @@ namespace FolderLock
 
         private void AddFilesDialog()
         {
-            using (var dlg = new OpenFileDialog { Multiselect = true, Title = "금고에 넣을 파일 선택" })
+            using (var dlg = new OpenFileDialog { Multiselect = true, Title = L.T("금고에 넣을 파일 선택", "Select files to add to the vault") })
                 if (dlg.ShowDialog(this) == DialogResult.OK) AddPaths(dlg.FileNames);
         }
 
         private void AddFolderDialog()
         {
-            using (var dlg = new FolderBrowserDialog { Description = "금고에 넣을 폴더 선택 (폴더째 암호화)", ShowNewFolderButton = false })
+            using (var dlg = new FolderBrowserDialog { Description = L.T("금고에 넣을 폴더 선택 (폴더째 암호화)", "Select a folder to add (encrypted as a whole)"), ShowNewFolderButton = false })
                 if (dlg.ShowDialog(this) == DialogResult.OK) AddPaths(new[] { dlg.SelectedPath });
         }
 
@@ -444,12 +466,15 @@ namespace FolderLock
             var root = _v.Root.TrimEnd('\\') + "\\";
             if (paths.Any(p => Path.GetFullPath(p).StartsWith(root, StringComparison.OrdinalIgnoreCase) || string.Equals(Path.GetFullPath(p).TrimEnd('\\'), _v.Root.TrimEnd('\\'), StringComparison.OrdinalIgnoreCase)))
             {
-                Msg.Warn(this, "금고 폴더 자체의 파일은 넣을 수 없습니다.");
+                Msg.Warn(this, L.T("금고 폴더 자체의 파일은 넣을 수 없습니다.", "Files inside the vault folder itself cannot be added."));
                 return;
             }
-            RunBusy("암호화해서 넣는 중", p => _v.AddPaths(paths, _folder, p));
+            var r = RunBusy(L.T("암호화해서 넣는 중", "Encrypting into vault"), p => _v.AddPaths(paths, _folder, p), cancellable: true);
             RefreshList(Vault.Combine(_folder, Path.GetFileName(paths[0].TrimEnd('\\'))));
-            _status.Text = $"{paths.Length}개 항목을 암호화해서 넣었습니다. 원본은 그대로 남아 있습니다.";
+            if (r == BusyResult.Done)
+                _status.Text = L.T($"{paths.Length}개 항목을 암호화해서 넣었습니다. 원본은 그대로 남아 있습니다.", $"Encrypted {paths.Length} item(s) into the vault. The originals were left as they are.");
+            else if (r == BusyResult.Canceled)
+                _status.Text = L.T("넣기를 중간에 멈췄습니다. 그때까지 넣은 파일은 금고에 있습니다.", "Adding was stopped. Files added up to that point are in the vault.");
         }
 
         private void NewFolder()
@@ -457,7 +482,7 @@ namespace FolderLock
             if (_busy) return;
             try
             {
-                var path = _v.CreateFolder(_folder, "새 폴더");
+                var path = _v.CreateFolder(_folder, L.T("새 폴더", "New folder"));
                 RefreshList(path);
                 if (_list.SelectedItems.Count == 1) _list.SelectedItems[0].BeginEdit();
             }
@@ -470,35 +495,29 @@ namespace FolderLock
         {
             var sel = Selected();
             if (_busy || sel.Count == 0) return;
+            var exportTitle = L.T("꺼내는 중", "Exporting");
             if (sel.Count == 1 && !sel[0].IsDir)
             {
-                using (var dlg = new SaveFileDialog { FileName = sel[0].Name, Title = "꺼낼 위치 (복호화된 파일이 저장됩니다)" })
+                using (var dlg = new SaveFileDialog { FileName = sel[0].Name, Title = L.T("꺼낼 위치 (복호화된 파일이 저장됩니다)", "Export to (the decrypted file will be saved here)") })
                 {
                     var ext = Path.GetExtension(sel[0].Name);
-                    dlg.Filter = (ext.Length > 0 ? $"{ext} 파일|*{ext}|" : "") + "모든 파일|*.*";
+                    dlg.Filter = (ext.Length > 0 ? L.T($"{ext} 파일|*{ext}|", $"{ext} files|*{ext}|") : "") + L.T("모든 파일|*.*", "All files|*.*");
                     if (dlg.ShowDialog(this) != DialogResult.OK) return;
-                    RunBusy("꺼내는 중", _ => _v.ExtractTo(sel[0], dlg.FileName));
-                    _status.Text = "꺼냈습니다: " + dlg.FileName;
+                    var target = dlg.FileName;
+                    if (RunBusy(exportTitle, p => { p.Begin(1, sel[0].Size); _v.ExtractTo(sel[0], target, p); p.FileDone(); }, cancellable: true) == BusyResult.Done)
+                        _status.Text = L.T("꺼냈습니다: ", "Exported: ") + target;
                 }
                 return;
             }
-            using (var dlg = new FolderBrowserDialog { Description = "꺼낼 위치를 선택하세요 (복호화된 파일이 저장됩니다)", ShowNewFolderButton = true })
+            using (var dlg = new FolderBrowserDialog { Description = L.T("꺼낼 위치를 선택하세요 (복호화된 파일이 저장됩니다)", "Choose where to export (decrypted files will be saved there)"), ShowNewFolderButton = true })
             {
                 if (dlg.ShowDialog(this) != DialogResult.OK) return;
                 var dest = dlg.SelectedPath;
                 var clash = sel.Where(x => File.Exists(Path.Combine(dest, x.Name)) || Directory.Exists(Path.Combine(dest, x.Name))).ToList();
-                if (clash.Count > 0 && !Msg.Confirm(this, $"꺼낼 위치에 같은 이름이 {clash.Count}개 있습니다. 덮어쓸까요?")) return;
-                RunBusy("꺼내는 중", p =>
-                {
-                    int i = 0;
-                    foreach (var x in sel)
-                    {
-                        p(i++, sel.Count, x.Name);
-                        if (x.IsDir) _v.ExtractFolderTo(x, dest);
-                        else _v.ExtractTo(x, Path.Combine(dest, x.Name));
-                    }
-                });
-                _status.Text = $"{sel.Count}개 항목을 꺼냈습니다: {dest}";
+                if (clash.Count > 0 && !Msg.Confirm(this, L.T($"꺼낼 위치에 같은 이름이 {clash.Count}개 있습니다. 덮어쓸까요?", $"{clash.Count} item(s) with the same name already exist there. Overwrite?"))) return;
+                var r = RunBusy(exportTitle, p => _v.ExtractMany(sel, dest, p), cancellable: true);
+                if (r == BusyResult.Done) _status.Text = L.T($"{sel.Count}개 항목을 꺼냈습니다: {dest}", $"Exported {sel.Count} item(s) to {dest}");
+                else if (r == BusyResult.Canceled) _status.Text = L.T("꺼내기를 중간에 멈췄습니다.", "Export was stopped.");
             }
         }
 
@@ -515,7 +534,7 @@ namespace FolderLock
             var entry = (Entry)_list.Items[e.Item].Tag;
             var newName = e.Label.Trim();
             if (newName == entry.Name) return;
-            if (!Vault.IsValidName(newName)) { Msg.Warn(this, "이름에 다음 문자는 쓸 수 없습니다:  \\ / : * ? \" < > |"); return; }
+            if (!Vault.IsValidName(newName)) { Msg.Warn(this, L.T("이름에 다음 문자는 쓸 수 없습니다:  \\ / : * ? \" < > |", "Names cannot contain:  \\ / : * ? \" < > |")); return; }
             var oldPath = entry.Path;
             BeginInvoke(new Action(() =>
             {
@@ -538,9 +557,12 @@ namespace FolderLock
         {
             var sel = Selected();
             if (_busy || sel.Count == 0) return;
-            var what = sel.Count == 1 ? $"'{sel[0].Name}'" + (sel[0].IsDir ? " 폴더와 그 안의 모든 파일" : "") : $"선택한 {sel.Count}개 항목";
-            if (!Msg.Confirm(this, what + "을(를) 금고에서 영구 삭제합니다.\n휴지통으로 가지 않으며 되돌릴 수 없습니다.\n\n삭제할까요?", danger: true)) return;
-            RunBusy("삭제 중", _ => _v.Delete(sel));
+            string what = sel.Count == 1
+                ? (sel[0].IsDir ? L.T($"'{sel[0].Name}' 폴더와 그 안의 모든 파일", $"the folder '{sel[0].Name}' and everything in it") : $"'{sel[0].Name}'")
+                : L.T($"선택한 {sel.Count}개 항목", $"the {sel.Count} selected items");
+            if (!Msg.Confirm(this, L.T(what + "을(를) 금고에서 영구 삭제합니다.\n휴지통으로 가지 않으며 되돌릴 수 없습니다.\n\n삭제할까요?",
+                                       "This permanently deletes " + what + " from the vault.\nIt does not go to the Recycle Bin and cannot be undone.\n\nDelete?"), danger: true)) return;
+            RunBusy(L.T("삭제 중", "Deleting"), p => _v.Delete(sel, p));
             foreach (var o in _opened.Where(o => sel.Any(x => string.Equals(o.VaultPath, x.Path, StringComparison.OrdinalIgnoreCase)
                                                               || o.VaultPath.StartsWith(x.Path + "/", StringComparison.OrdinalIgnoreCase))).ToList())
             {
@@ -558,26 +580,29 @@ namespace FolderLock
                 if (pf.ShowDialog(this) != DialogResult.OK) return;
                 try
                 {
-                    ProgressForm.Run(this, "비밀번호 바꾸는 중", _ => _v.ChangePassword(pf.CurrentPassword, pf.Password));
-                    Msg.Info(this, "비밀번호를 바꿨습니다. 다음부터 새 비밀번호로 여세요.");
+                    ProgressForm.Run(this, L.T("비밀번호 바꾸는 중", "Changing password"), _ => _v.ChangePassword(pf.CurrentPassword, pf.Password));
+                    Msg.Info(this, L.T("비밀번호를 바꿨습니다. 다음부터 새 비밀번호로 여세요.", "Password changed. Use the new password from now on."));
                 }
-                catch (WrongPasswordException) { Msg.Warn(this, "현재 비밀번호가 틀렸습니다. 바뀌지 않았습니다."); }
-                catch (Exception ex) { Msg.Error(this, "비밀번호를 바꾸지 못했습니다.\n\n" + ex.Message); }
+                catch (WrongPasswordException) { Msg.Warn(this, L.T("현재 비밀번호가 틀렸습니다. 바뀌지 않았습니다.", "The current password is wrong. Nothing was changed.")); }
+                catch (Exception ex) { Msg.Error(this, L.T("비밀번호를 바꾸지 못했습니다.\n\n", "Could not change the password.\n\n") + ex.Message); }
             }
         }
 
-        private void RunBusy(string title, Action<Action<int, int, string>> work)
+        private enum BusyResult { Done, Canceled, Failed }
+
+        private BusyResult RunBusy(string title, Action<OpProgress> work, bool cancellable = false)
         {
             _busy = true;
             try
             {
                 try { _syncTask?.Wait(); } catch { }
-                ProgressForm.Run(this, title, work);
+                return ProgressForm.Run(this, title, work, cancellable) ? BusyResult.Done : BusyResult.Canceled;
             }
             catch (Exception ex)
             {
-                if (!VaultPresent()) return; // USB 제거 → 다음 tick 에서 긴급 잠금
-                Msg.Error(this, title.Replace(" 중", "") + " 작업 중 오류가 났습니다.\n\n" + ex.Message);
+                if (VaultPresent()) // USB 가 빠진 경우는 다음 tick 에서 긴급 잠금
+                    Msg.Error(this, L.T("작업 중 오류가 났습니다.\n\n", "An error occurred.\n\n") + ex.Message);
+                return BusyResult.Failed;
             }
             finally { _busy = false; }
         }

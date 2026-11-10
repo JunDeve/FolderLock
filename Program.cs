@@ -10,13 +10,20 @@ namespace FolderLock
     internal static class Program
     {
         [STAThread]
-        private static void Main()
+        private static void Main(string[] args)
         {
+            // 언어 강제: FolderLock.exe --lang=en  /  --lang=ko  (기본: Windows 표시 언어)
+            foreach (var a in args)
+            {
+                if (a.Equals("--lang=en", StringComparison.OrdinalIgnoreCase)) L.Ko = false;
+                else if (a.Equals("--lang=ko", StringComparison.OrdinalIgnoreCase)) L.Ko = true;
+            }
+
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
             Application.SetUnhandledExceptionMode(UnhandledExceptionMode.CatchException);
             Application.ThreadException += (s, e) =>
-                MessageBox.Show("예기치 못한 오류가 났습니다.\n\n" + e.Exception.Message, "FolderLock", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                MessageBox.Show(L.T("예기치 못한 오류가 났습니다.\n\n", "An unexpected error occurred.\n\n") + e.Exception.Message, "FolderLock", MessageBoxButtons.OK, MessageBoxIcon.Error);
 
             // 이전에 강제 종료돼서 PC 에 남은 임시 해독본 정리
             TempManager.CleanupStale();
@@ -42,7 +49,7 @@ namespace FolderLock
                         if (!owned)
                         {
                             vault.Dispose();
-                            MessageBox.Show("이 금고는 이미 다른 FolderLock 창에서 열려 있습니다.", "FolderLock", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                            MessageBox.Show(L.T("이 금고는 이미 다른 FolderLock 창에서 열려 있습니다.", "This vault is already open in another FolderLock window."), "FolderLock", MessageBoxButtons.OK, MessageBoxIcon.Information);
                             continue;
                         }
 
@@ -63,9 +70,9 @@ namespace FolderLock
                         }
 
                         if (result == CloseKind.Removed)
-                            MessageBox.Show("USB(금고 폴더)가 분리되어 금고를 잠갔습니다.\nPC에 남아 있던 임시 해독본도 지웠습니다.", "FolderLock", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                            MessageBox.Show(L.T("USB(금고 폴더)가 분리되어 금고를 잠갔습니다.\nPC에 남아 있던 임시 해독본도 지웠습니다.", "The USB drive (vault folder) was removed, so the vault was locked.\nDecrypted temp copies on this PC were deleted."), "FolderLock", MessageBoxButtons.OK, MessageBoxIcon.Information);
                         else if (result == CloseKind.IdleLocked)
-                            MessageBox.Show("오랫동안 사용하지 않아 금고를 자동으로 잠갔습니다.", "FolderLock", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                            MessageBox.Show(L.T("오랫동안 사용하지 않아 금고를 자동으로 잠갔습니다.", "The vault was locked automatically after a period of inactivity."), "FolderLock", MessageBoxButtons.OK, MessageBoxIcon.Information);
 
                         if (result == CloseKind.Exit) break;
                     }

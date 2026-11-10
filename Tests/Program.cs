@@ -30,6 +30,9 @@ internal static class Program
             Run("비밀번호 변경", ChangePassword);
             Run("목록 손상 시 백업으로 복구", IndexRecovery);
             Run("0바이트·한글·긴 파일명", EdgeNames);
+            Run("진행률 집계 (파일 수·바이트)", ProgressTotals);
+            Run("변환 중 취소 → 처리분만 반영, 나머지 원본 유지", CancelConvert);
+            Run("넣기 중 취소 → 일관된 상태", CancelAdd);
         }
         finally
         {
@@ -291,6 +294,79 @@ internal static class Program
                 var data = v.ReadAll(e);
                 Assert(n == "빈파일.txt" ? data.Length == 0 : Encoding.UTF8.GetString(data) == n, "내용: " + n);
             }
+    }
+
+    static void ProgressTotals()
+    {
+        var d = NewDir("v11");
+        long total = 0;
+        for (int i = 0; i < 30; i++) { var b = Rand(1000 + i * 37); total += b.Length; File.WriteAllBytes(Path.Combine(d, $"f{i}.bin"), b); }
+        using (var v = Vault.Create(d, "pw", Iter))
+        {
+            var p = new OpProgress();
+            v.EncryptPlainFilesInPlace(p);
+            Assert(p.TotalFiles == 30 && p.Files == 30, $"파일 수 {p.Files}/{p.TotalFiles}");
+            Assert(p.TotalBytes == total && p.Bytes == total, $"바이트 {p.Bytes}/{p.TotalBytes} (기대 {total})");
+            var outDir = NewDir("out11");
+            var p2 = new OpProgress();
+            v.ExtractMany(v.List(""), outDir, p2);
+            Assert(p2.Files == 30 && p2.Bytes == total, $"꺼내기 진행률 {p2.Files} {p2.Bytes}");
+        }
+    }
+
+    /// <summary>N개째 파일에서 취소를 거는 진행 객체</summary>
+    static OpProgress CancelAfter(int files, out System.Threading.CancellationTokenSource cts)
+    {
+        var c = new System.Threading.CancellationTokenSource();
+        cts = c;
+        var p = new OpProgress(c.Token);
+        new System.Threading.Thread(() => { while (!c.IsCancellationRequested) { if (p.Files >= files) c.Cancel(); System.Threading.Thread.Sleep(1); } }) { IsBackground = true }.Start();
+        return p;
+    }
+
+    static void CancelConvert()
+    {
+        var d = NewDir("v12");
+        var data = new Dictionary<string, byte[]>();
+        for (int i = 0; i < 60; i++) { var b = Rand(200_000); data[$"f{i:00}.bin"] = b; File.WriteAllBytes(Path.Combine(d, $"f{i:00}.bin"), b); }
+        using (var v = Vault.Create(d, "pw", Iter))
+        {
+            var p = CancelAfter(10, out var cts);
+            Throws<OperationCanceledException>(() => v.EncryptPlainFilesInPlace(p), "취소 예외 없음");
+        }
+        int plainLeft = Vault.FindPlainFiles(d).Count;
+        using (var v = Vault.Open(d, "pw"))
+        {
+            int inVault = v.FileCount;
+            Assert(inVault >= 10 && inVault < 60, "금고 파일 수 " + inVault);
+            Assert(inVault + plainLeft == 60, $"유실/중복: 금고 {inVault} + 원본 {plainLeft} != 60");
+            foreach (var e in v.List("")) Assert(v.ReadAll(e).SequenceEqual(data[e.Name]), "내용 불일치 " + e.Name);
+            Assert(Directory.GetFiles(Path.Combine(d, "data"), "*.tmp", SearchOption.AllDirectories).Length == 0, "쓰다 만 블롭 남음");
+            // 이어서 처리
+            v.EncryptPlainFilesInPlace();
+            Assert(v.FileCount == 60 && Vault.FindPlainFiles(d).Count == 0, "이어하기 실패");
+        }
+    }
+
+    static void CancelAdd()
+    {
+        var src = NewDir("src13");
+        for (int i = 0; i < 40; i++) File.WriteAllBytes(Path.Combine(src, $"a{i:00}.bin"), Rand(150_000));
+        var d = NewDir("v13");
+        using (var v = Vault.Create(d, "pw", Iter))
+        {
+            var p = CancelAfter(5, out var cts);
+            Throws<OperationCanceledException>(() => v.AddPaths(new[] { src }, "", p), "취소 예외 없음");
+        }
+        using (var v = Vault.Open(d, "pw"))
+        {
+            var files = v.List("src13");
+            Assert(files.Count >= 5 && files.Count < 40, "넣은 수 " + files.Count);
+            foreach (var e in files) Assert(v.ReadAll(e).SequenceEqual(File.ReadAllBytes(Path.Combine(src, e.Name))), "내용 " + e.Name);
+            int blobs = Directory.GetFiles(Path.Combine(d, "data"), "*.fl", SearchOption.AllDirectories).Length;
+            Assert(blobs == files.Count, $"블롭 {blobs} != 목록 {files.Count}");
+        }
+        Assert(Directory.GetFiles(src).Length == 40, "원본이 지워짐");
     }
 
     static int IndexOf(byte[] hay, byte[] needle)

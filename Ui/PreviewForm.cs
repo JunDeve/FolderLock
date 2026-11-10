@@ -73,7 +73,7 @@ namespace FolderLock
                 };
                 _text.TextChanged += (s, a) => { if (!_dirty) { _dirty = true; UpdateTitle(); } };
                 var strip = new StatusStrip();
-                strip.Items.Add(new ToolStripStatusLabel("Ctrl+S: 금고에 암호화 저장   |   인코딩: " + (_encoding.CodePage == 949 ? "ANSI(CP949)" : "UTF-8")));
+                strip.Items.Add(new ToolStripStatusLabel(L.T("Ctrl+S: 금고에 암호화 저장   |   인코딩: ", "Ctrl+S: save encrypted to the vault   |   Encoding: ") + (_encoding.CodePage == 949 ? "ANSI(CP949)" : "UTF-8")));
                 Controls.Add(_text);
                 Controls.Add(strip);
                 UpdateTitle();
@@ -86,7 +86,7 @@ namespace FolderLock
             }
         }
 
-        private void UpdateTitle() => Text = (_dirty ? "● " : "") + _name + " — FolderLock (메모리에서 열림)";
+        private void UpdateTitle() => Text = (_dirty ? "● " : "") + _name + L.T(" — FolderLock (메모리에서 열림)", " — FolderLock (opened in memory)");
 
         private bool SaveText()
         {
@@ -109,7 +109,7 @@ namespace FolderLock
         {
             if (_dirty && !ForceClose && e.CloseReason == CloseReason.UserClosing)
             {
-                var r = MessageBox.Show(this, "변경 내용을 금고에 저장할까요?", "FolderLock", MessageBoxButtons.YesNoCancel, MessageBoxIcon.Question);
+                var r = MessageBox.Show(this, L.T("변경 내용을 금고에 저장할까요?", "Save changes to the vault?"), "FolderLock", MessageBoxButtons.YesNoCancel, MessageBoxIcon.Question);
                 if (r == DialogResult.Cancel) { e.Cancel = true; return; }
                 if (r == DialogResult.Yes && !SaveText()) { e.Cancel = true; return; }
             }

@@ -19,7 +19,7 @@ namespace FolderLock
         public PasswordForm(PasswordMode mode, string vaultName)
         {
             _mode = mode;
-            Text = mode == PasswordMode.Open ? "금고 열기" : mode == PasswordMode.Create ? "새 비밀번호 설정" : "비밀번호 변경";
+            Text = mode == PasswordMode.Open ? L.T("금고 열기", "Open vault") : mode == PasswordMode.Create ? L.T("새 비밀번호 설정", "Set a new password") : L.T("비밀번호 변경", "Change password");
             Icon = Theme.AppIcon;
             Font = Theme.Base;
             FormBorderStyle = FormBorderStyle.FixedDialog;
@@ -48,7 +48,8 @@ namespace FolderLock
             {
                 root.Controls.Add(new Label
                 {
-                    Text = "비밀번호를 잊으면 누구도(만든 사람도) 복구할 수 없습니다.\n잘 기억할 수 있는 긴 문장을 추천합니다.",
+                    Text = L.T("비밀번호를 잊으면 누구도(만든 사람도) 복구할 수 없습니다.\n잘 기억할 수 있는 긴 문장을 추천합니다.",
+                             "If you forget the password, nobody (not even you) can recover the files.\nA long sentence you can remember is recommended."),
                     ForeColor = Theme.Danger, AutoSize = true, MaximumSize = new Size(380, 0), Margin = new Padding(0, 0, 0, 10),
                 });
             }
@@ -61,11 +62,11 @@ namespace FolderLock
                 return tb;
             }
 
-            if (mode == PasswordMode.Change) _current = AddField("현재 비밀번호");
-            _pw1 = AddField(mode == PasswordMode.Open ? "비밀번호" : "새 비밀번호 (" + MinLength + "자 이상)");
-            if (mode != PasswordMode.Open) _pw2 = AddField("새 비밀번호 확인");
+            if (mode == PasswordMode.Change) _current = AddField(L.T("현재 비밀번호", "Current password"));
+            _pw1 = AddField(mode == PasswordMode.Open ? L.T("비밀번호", "Password") : L.T($"새 비밀번호 ({MinLength}자 이상)", $"New password (at least {MinLength} characters)"));
+            if (mode != PasswordMode.Open) _pw2 = AddField(L.T("새 비밀번호 확인", "Confirm new password"));
 
-            var show = new CheckBox { Text = "비밀번호 보기", AutoSize = true, ForeColor = Theme.Muted, Margin = new Padding(0, 2, 0, 4) };
+            var show = new CheckBox { Text = L.T("비밀번호 보기", "Show password"), AutoSize = true, ForeColor = Theme.Muted, Margin = new Padding(0, 2, 0, 4) };
             show.CheckedChanged += (s, e) =>
             {
                 foreach (var tb in new[] { _current, _pw1, _pw2 }) if (tb != null) tb.UseSystemPasswordChar = !show.Checked;
@@ -76,8 +77,8 @@ namespace FolderLock
             root.Controls.Add(_error);
 
             var buttons = new FlowLayoutPanel { FlowDirection = FlowDirection.RightToLeft, AutoSize = true, Dock = DockStyle.Fill, Margin = new Padding(0, 6, 0, 0) };
-            var ok = Theme.PrimaryButton(mode == PasswordMode.Open ? "열기" : "확인");
-            var cancel = Theme.SecondaryButton("취소");
+            var ok = Theme.PrimaryButton(mode == PasswordMode.Open ? L.T("열기", "Open") : L.T("확인", "OK"));
+            var cancel = Theme.SecondaryButton(L.T("취소", "Cancel"));
             ok.Click += (s, e) => TryAccept();
             cancel.Click += (s, e) => { DialogResult = DialogResult.Cancel; Close(); };
             buttons.Controls.Add(ok);
@@ -95,13 +96,13 @@ namespace FolderLock
         {
             if (_mode == PasswordMode.Open)
             {
-                if (_pw1.Text.Length == 0) { _error.Text = "비밀번호를 입력하세요."; return; }
+                if (_pw1.Text.Length == 0) { _error.Text = L.T("비밀번호를 입력하세요.", "Enter the password."); return; }
             }
             else
             {
-                if (_mode == PasswordMode.Change && _current.Text.Length == 0) { _error.Text = "현재 비밀번호를 입력하세요."; return; }
-                if (_pw1.Text.Length < MinLength) { _error.Text = $"비밀번호는 {MinLength}자 이상이어야 합니다."; _pw1.Focus(); return; }
-                if (_pw1.Text != _pw2.Text) { _error.Text = "두 비밀번호가 서로 다릅니다."; _pw2.SelectAll(); _pw2.Focus(); return; }
+                if (_mode == PasswordMode.Change && _current.Text.Length == 0) { _error.Text = L.T("현재 비밀번호를 입력하세요.", "Enter the current password."); return; }
+                if (_pw1.Text.Length < MinLength) { _error.Text = L.T($"비밀번호는 {MinLength}자 이상이어야 합니다.", $"The password must be at least {MinLength} characters."); _pw1.Focus(); return; }
+                if (_pw1.Text != _pw2.Text) { _error.Text = L.T("두 비밀번호가 서로 다릅니다.", "The two passwords do not match."); _pw2.SelectAll(); _pw2.Focus(); return; }
             }
             DialogResult = DialogResult.OK;
             Close();
