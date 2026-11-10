@@ -1,0 +1,32 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <!-- .NET Framework 4.8: Windows 10/11 에 기본 내장 → 설치 없이 어느 PC에서나 실행, exe 크기 수백 KB -->
+    <TargetFramework>net48</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>disable</Nullable>
+    <RootNamespace>FolderLock</RootNamespace>
+    <AssemblyName>FolderLock</AssemblyName>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>FolderLock.ico</ApplicationIcon>
+    <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
+    <AssemblyTitle>FolderLock</AssemblyTitle>
+    <Product>FolderLock</Product>
+    <Version>1.0.0</Version>
+    <DebugType>none</DebugType>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Reference Include="System.Windows.Forms" />
+    <Reference Include="System.Drawing" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Remove="Tests\**" />
+    <!-- 창 제목줄·시작 화면용 아이콘 (exe 아이콘과 같은 파일, tools\make-icon.ps1 로 생성) -->
+    <EmbeddedResource Include="FolderLock.ico" LogicalName="FolderLock.ico" />
+  </ItemGroup>
+
+</Project>
